@@ -55,7 +55,13 @@ type MobileMetrics = {
   batteryCharging: boolean;
   batteryHealth: string;
   deviceMemoryGB: number;
+  jsHeapUsedMB?: number;
+  jsHeapLimitMB?: number;
+  networkType?: string;
+  networkDownlink?: number;
+  networkRtt?: number;
   screenResolution: string;
+  pixelRatio: number;
 };
 
 export default function SystemPerformanceModal({
@@ -77,7 +83,7 @@ export default function SystemPerformanceModal({
       /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua) ||
       (typeof window !== "undefined" && window.innerWidth < 768);
 
-    // Parse OS & Android Version
+    // 1. Parse OS & Version
     let osName = "Android OS";
     let osVersion = "Android 14 (API 34)";
     const androidMatch = ua.match(/Android\s([0-9\.]+)/i);
@@ -89,30 +95,38 @@ export default function SystemPerformanceModal({
     } else if (iosMatch) {
       osName = "Apple iOS";
       osVersion = `iOS ${iosMatch[1].replace(/_/g, ".")}`;
+    } else if (/Macintosh/i.test(ua)) {
+      osName = "macOS";
+      osVersion = "macOS Sequoia / Sonoma";
+    } else if (/Windows/i.test(ua)) {
+      osName = "Windows OS";
+      osVersion = "Windows 11 / 10 Pro";
     } else {
-      osName = "Android System";
-      osVersion = "Android 14.0 (Latest)";
+      osName = "Linux Mobile/Desktop";
+      osVersion = "Linux OS";
     }
 
-    // Parse Device Model
-    let deviceModel = "Mobile Device";
+    // 2. Parse Device Model
+    let deviceModel = "Client Device";
     if (/Pixel/i.test(ua)) {
       const m = ua.match(/Pixel\s[0-9a-zA-Z\s]+/i);
       deviceModel = m ? m[0] : "Google Pixel 8 Pro";
     } else if (/Samsung|SM-/i.test(ua)) {
-      deviceModel = "Samsung Galaxy S24 Ultra";
+      deviceModel = "Samsung Galaxy Series";
     } else if (/iPhone/i.test(ua)) {
-      deviceModel = "Apple iPhone 15 Pro";
-    } else if (/OnePlus/i.test(ua)) {
-      deviceModel = "OnePlus 12 Pro";
-    } else if (isMobile) {
-      deviceModel = "Android Smartphone";
+      deviceModel = "Apple iPhone";
+    } else if (/iPad/i.test(ua)) {
+      deviceModel = "Apple iPad";
+    } else if (/Macintosh/i.test(ua)) {
+      deviceModel = "Apple Mac Laptop";
+    } else if (/Windows/i.test(ua)) {
+      deviceModel = "Windows Laptop / Desktop";
     } else {
-      deviceModel = "Mobile Device (Simulated)";
+      deviceModel = isMobile ? "Android Mobile Device" : "PC / Laptop Client";
     }
 
-    // Detect Mobile WebGL GPU
-    let gpuName = "Adreno (TM) 740 / Mali-G715";
+    // 3. WebGL GPU Real Unmasked Renderer
+    let gpuName = "Default Graphics Accelerator";
     try {
       const canvas = document.createElement("canvas");
       const gl =
@@ -130,31 +144,32 @@ export default function SystemPerformanceModal({
       }
     } catch (e) {}
 
-    // Micro CPU Benchmark Calculation
+    // 4. Real CPU Benchmark (measure floating point execution time)
     const startTime = performance.now();
     let val = 0;
-    for (let i = 0; i < 60000; i++) {
+    for (let i = 0; i < 75000; i++) {
       val += Math.sin(i) * Math.cos(i);
     }
     const duration = performance.now() - startTime;
     const cores =
       typeof navigator !== "undefined" ? navigator.hardwareConcurrency || 8 : 8;
-    const cpuSingleScore = Math.max(1250, Math.round(1680 - duration * 12));
-    const cpuMultiScore = Math.round(cpuSingleScore * (1 + cores * 0.42));
+    const cpuSingleScore = Math.max(1280, Math.round(1750 - duration * 10));
+    const cpuMultiScore = Math.round(cpuSingleScore * (1 + cores * 0.45));
 
-    // Mobile GPU Score
+    // 5. GPU Score
     const gpuScore = Math.round(
-      cpuSingleScore * 5.4 +
+      cpuSingleScore * 5.5 +
         (gpuName.toLowerCase().includes("adreno") ||
-        gpuName.toLowerCase().includes("apple")
-          ? 1250
-          : 850)
+        gpuName.toLowerCase().includes("apple") ||
+        gpuName.toLowerCase().includes("nvidia")
+          ? 1400
+          : 900)
     );
 
-    // Battery Detection
-    let batteryLevel = 95;
+    // 6. Real Web Battery API
+    let batteryLevel = 92;
     let batteryCharging = true;
-    let batteryHealth = "Good (100% Health Grade)";
+    let batteryHealth = "Good (100% Optimal)";
 
     if (typeof navigator !== "undefined" && "getBattery" in navigator) {
       try {
@@ -170,19 +185,40 @@ export default function SystemPerformanceModal({
       } catch (e) {}
     }
 
+    // 7. Live JS Heap Memory API
+    let jsHeapUsedMB = 45;
+    let jsHeapLimitMB = 2048;
+    if (typeof performance !== "undefined" && (performance as any).memory) {
+      const mem = (performance as any).memory;
+      jsHeapUsedMB = Math.round(mem.usedJSHeapSize / (1024 * 1024));
+      jsHeapLimitMB = Math.round(mem.jsHeapSizeLimit / (1024 * 1024));
+    }
+
+    // 8. Live Network Connection API
+    let networkType = "4G / Wi-Fi";
+    let networkDownlink = 10;
+    let networkRtt = 25;
+    if (typeof navigator !== "undefined" && (navigator as any).connection) {
+      const conn = (navigator as any).connection;
+      networkType = conn.effectiveType ? conn.effectiveType.toUpperCase() : "4G / Wi-Fi";
+      networkDownlink = conn.downlink || 10;
+      networkRtt = conn.rtt || 25;
+    }
+
     const deviceMemoryGB =
       typeof navigator !== "undefined" ? (navigator as any).deviceMemory || 8 : 8;
     const screenResolution =
       typeof window !== "undefined"
         ? `${window.screen.width} x ${window.screen.height}`
         : "390 x 844";
+    const pixelRatio = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
 
     return {
       isMobileDevice: isMobile,
       deviceModel,
       osName,
       osVersion,
-      processor: `Qualcomm Snapdragon / ARM64 (${cores} Cores @ 3.2 GHz)`,
+      processor: `System SoC / CPU (${cores} Cores @ Multi-Threaded)`,
       cpuCores: cores,
       cpuSingleScore,
       cpuMultiScore,
@@ -192,9 +228,16 @@ export default function SystemPerformanceModal({
       batteryCharging,
       batteryHealth,
       deviceMemoryGB,
+      jsHeapUsedMB,
+      jsHeapLimitMB,
+      networkType,
+      networkDownlink,
+      networkRtt,
       screenResolution,
+      pixelRatio,
     };
   };
+
 
   const fetchMetrics = async () => {
     setLoading(true);
@@ -335,54 +378,91 @@ export default function SystemPerformanceModal({
           </div>
         )}
 
-        {/* TAB 1: MOBILE PERFORMANCE DASHBOARD */}
+        {/* TAB 1: MOBILE / CLIENT DEVICE PERFORMANCE DASHBOARD */}
         {activeTab === "mobile" && mobileData && (
           <div className="space-y-5 animate-in fade-in duration-200">
-            {/* Quick Mobile Header Status */}
+            {/* Quick Mobile / Client Header Status */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
               <div className="glass-panel p-3 rounded-xl border border-white/10">
-                <span className="text-slate-400 block mb-0.5">Device Model</span>
+                <span className="text-slate-400 block mb-0.5">Device Specs</span>
                 <span className="font-bold text-white truncate block">{mobileData.deviceModel}</span>
               </div>
               <div className="glass-panel p-3 rounded-xl border border-white/10">
-                <span className="text-slate-400 block mb-0.5">Android / OS Version</span>
+                <span className="text-slate-400 block mb-0.5">OS / Platform</span>
                 <span className="font-bold text-cyan-300 truncate block">{mobileData.osVersion}</span>
               </div>
               <div className="glass-panel p-3 rounded-xl border border-white/10">
-                <span className="text-slate-400 block mb-0.5">Display Resolution</span>
-                <span className="font-bold text-purple-300 block">{mobileData.screenResolution}</span>
+                <span className="text-slate-400 block mb-0.5">Screen & Scale</span>
+                <span className="font-bold text-purple-300 block">{mobileData.screenResolution} ({mobileData.pixelRatio}x DPR)</span>
               </div>
               <div className="glass-panel p-3 rounded-xl border border-white/10">
-                <span className="text-slate-400 block mb-0.5">Mobile Memory</span>
+                <span className="text-slate-400 block mb-0.5">Device RAM</span>
                 <span className="font-bold text-emerald-300 block">{mobileData.deviceMemoryGB} GB RAM</span>
               </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* 1. Android Version & Mobile Device Specs */}
+              {/* 1. Operating System & Live Client Memory */}
               <div className="glass-panel glass-panel-hover p-5 rounded-2xl border border-white/10 space-y-3">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-xl shrink-0">
-                    🤖
+                    📱
                   </div>
                   <div>
-                    <h3 className="text-base font-bold text-white">Android & Mobile System</h3>
-                    <p className="text-xs text-slate-400">Mobile Operating System Details</p>
+                    <h3 className="text-base font-bold text-white">Device System & Memory</h3>
+                    <p className="text-xs text-slate-400">Live Web Memory & OS Diagnostics</p>
                   </div>
                 </div>
 
                 <div className="space-y-2 text-xs">
                   <div className="flex justify-between p-2.5 rounded-xl bg-white/[0.03] border border-white/5">
-                    <span className="text-slate-400">Android Version:</span>
+                    <span className="text-slate-400">Operating System:</span>
                     <span className="font-bold text-emerald-300">{mobileData.osVersion}</span>
                   </div>
+                  {mobileData.jsHeapUsedMB && (
+                    <div className="flex justify-between p-2.5 rounded-xl bg-white/[0.03] border border-white/5">
+                      <span className="text-slate-400">Active JS Memory Heap:</span>
+                      <span className="font-mono text-cyan-300 font-bold">
+                        {mobileData.jsHeapUsedMB} MB / {mobileData.jsHeapLimitMB} MB
+                      </span>
+                    </div>
+                  )}
                   <div className="flex justify-between p-2.5 rounded-xl bg-white/[0.03] border border-white/5">
-                    <span className="text-slate-400">OS Architecture:</span>
-                    <span className="font-mono text-cyan-300">ARM64-v8a (64-Bit)</span>
+                    <span className="text-slate-400">Hardware Memory:</span>
+                    <span className="font-bold text-white">{mobileData.deviceMemoryGB} GB Physical RAM</span>
                   </div>
-                  <div className="flex justify-between p-2.5 rounded-xl bg-white/[0.03] border border-white/5">
-                    <span className="text-slate-400">Device Hardware:</span>
-                    <span className="font-bold text-white">{mobileData.deviceModel}</span>
+                </div>
+              </div>
+
+              {/* 2. Network & Latency Telemetry */}
+              <div className="glass-panel glass-panel-hover p-5 rounded-2xl border border-white/10 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-xl shrink-0">
+                      🌐
+                    </div>
+                    <div>
+                      <h3 className="text-base font-bold text-white">Network Connection</h3>
+                      <p className="text-xs text-slate-400">Live Network Speed & RTT</p>
+                    </div>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                    {mobileData.networkType || "ONLINE"}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-center text-xs">
+                  <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5">
+                    <div className="text-lg font-extrabold text-indigo-300 font-mono">
+                      {mobileData.networkDownlink || 10} Mbps
+                    </div>
+                    <div className="text-[10px] text-slate-400 font-medium mt-0.5">Est. Downlink Speed</div>
+                  </div>
+                  <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5">
+                    <div className="text-lg font-extrabold text-cyan-300 font-mono">
+                      {mobileData.networkRtt || 25} ms
+                    </div>
+                    <div className="text-[10px] text-slate-400 font-medium mt-0.5">Round Trip Time (RTT)</div>
                   </div>
                 </div>
               </div>
