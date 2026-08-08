@@ -357,7 +357,7 @@ export default function SystemPerformanceModal({
                   : "bg-white/5 border border-white/10 text-slate-400 hover:text-white"
               }`}
             >
-              <span>💻 Desktop Host Metrics</span>
+              <span>💻 Desktop Performance</span>
             </button>
           </div>
         </div>
